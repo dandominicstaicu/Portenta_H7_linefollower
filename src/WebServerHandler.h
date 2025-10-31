@@ -7,7 +7,7 @@
 extern double KP, KI, KD;
 extern int REFERENCE_SPEED;
 extern WiFiServer server;
-extern double BASE_SPEED;
+extern double setBaseSpeed;
 extern bool robotActive;
 extern double MAX_OUTPUT;
 

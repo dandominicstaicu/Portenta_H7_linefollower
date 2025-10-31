@@ -1,23 +1,26 @@
 /*
-    * Copyright (C) 2025 by Dan-Dominic Staicu
-    * 331CA UNSTPB ACS CTI
+speed 50 KP 0.0065 KI 0.00000015 KD 0.1375 Output 50
+speed 85 KP 0.00562 KI 0.0000022 KD 0.1625 Output 75
+
+speed 80 KP 0.01892 KI 0.00000022 KD 0.1825 Output 70
+
+
 */
 #include <Arduino.h>
 #include <IRremote.h>
-#include <WiFi.h>
-#include <WiFiServer.h>
+// #include <WiFi.h>
+// #include <WiFiServer.h>
 
 #include "LF_SData.h"
 #include "MotorDriver.h"
-#include "arduino_secrets.h"
-#include "WebServerHandler.h"
-#include "arduino_secrets.h"
+// #include "arduino_secrets.h"
+// #include "WebServerHandler.h"
 
 #define DEBUG_FLAG false
 #define SETUP_WIFI false
-#define CALIBRATION_FLAG true
+#define CALIBRATION_FLAG false
 
-WiFiServer server(80);
+// WiFiServer server(80);
 
 LF_SData sensorData;
 
@@ -30,10 +33,10 @@ LF_SData sensorData;
 #define S3 D3   // Multiplexer select pin S3
 #define SIG A6   // Analog signal pin from multiplexer
 
-#define M1DIR D4  // GPIO
-#define M1PWM D5  // PWM 
-#define M2DIR D7  // GPIO
-#define M2PWM D6  // PWM 
+#define M1DIR D7  // GPIO
+#define M1PWM D6  // PWM 
+#define M2DIR D5  // GPIO
+#define M2PWM D4  // PWM 
 MotorDriver motors(M1DIR, M1PWM, M2DIR, M2PWM);
 
 #define IR_PIN D8
@@ -43,13 +46,13 @@ unsigned long accelerationTime = 3000; // 5 seconds
 
 bool robotActive = false;
 
-double MAX_OUTPUT = 40;
-double setBaseSpeed = 50;
+double MAX_OUTPUT = 70;
+double setBaseSpeed = 80;
 
 
-double KP = 0.0018; // todo maybe a bit lower
-double KI = 0.000002; // todo play
-double KD = 0.60; //todo increase 
+double KP = 0.00605; // todo maybe a bit lower 0.00432
+double KI = 0.00000022; // todo play 0.00000023
+double KD = 0.1625; //todo increase 0.326
 
 const float alpha = 0.88; // Lower = smoother but slower response
 double smoothed_error = 0;
@@ -61,6 +64,13 @@ double integral = 0;
 double previousError = 0;
 
 double BASE_SPEED = 0;
+
+enum TurnType { TurnNone, TurnLeft, TurnRight };
+bool inSharpTurn = false;
+unsigned long sharpTurnStart = 0;
+TurnType currentTurn = TurnNone;
+const unsigned long sharpReverseMs = 6; // ~6 ms pivot phase
+TurnType lastTurnDirection = TurnNone; // remembered direction to rotate when line is lost
 
 void start_stop() {
     // IR handling
@@ -123,22 +133,22 @@ void setup() {
 
     IrReceiver.begin(IR_PIN, ENABLE_LED_FEEDBACK); // Init IR receiver
     
-    if (WiFi.beginAP(SECRET_SSID, SECRET_PASS) != WL_AP_LISTENING) {
-        if (DEBUG_FLAG) Serial.println("Failed to start AP");
-        while (true); // halt
-    }
+    // if (WiFi.beginAP(SECRET_SSID, SECRET_PASS) != WL_AP_LISTENING) {
+    //     if (DEBUG_FLAG) Serial.println("Failed to start AP");
+    //     while (true); // halt
+    // }
 
-    server.begin();
+    // server.begin();
 
     if (DEBUG_FLAG) {
         Serial.println("Access Point started");
         Serial.print("IP Address: ");
-        Serial.println(WiFi.localIP()); // This will usually be 192.168.3.1
+        // Serial.println(WiFi.localIP()); // This will usually be 192.168.3.1
     }
 }
 
 void loop() {
-    handleWeb();
+    // handleWeb();
     start_stop();
 
     if (startTime == 0) {
@@ -155,7 +165,7 @@ void loop() {
     }
 
     int line_value = sensorData.getLinePosition();
-    int raw_error = line_value - 7500;
+    int raw_error = 7250 - line_value;
     smoothed_error = alpha * raw_error + (1 - alpha) * smoothed_error;
     // smoothed_error = raw_error;
     double pid_output = constrain(PID(smoothed_error), -MAX_OUTPUT, MAX_OUTPUT);
@@ -174,29 +184,86 @@ void loop() {
     double right = BASE_SPEED - pid_output;
 
     if ((line_value > 2000 && smoothed_error <= 4000) || (smoothed_error >= 11000 && smoothed_error < 13000)) {  // Medium turn
-        BASE_SPEED = setBaseSpeed * 0.9; // maybe 0.85
+        BASE_SPEED = setBaseSpeed * 0.80; // maybe 0.85
     } else {                     // Straight line
         BASE_SPEED = setBaseSpeed;  // Restore full speed
     }
 
     if (robotActive) {
-        if (line_value <= 1500) {
-            left = -45;
-            right = 60;
-        } else if (line_value >= 14500) {
-            left = 60;
-            right = -45;
-        } else if (line_value <= 2500) {
-            left = -25;
-            right = 55;
-        } else if (line_value >= 13500) {
-            left = 55;
-            right = -25;
-        } 
+        // Determine if line is lost (all white/black). Adjust thresholds as needed.
+        bool lineLost = (line_value <= 200) || (line_value >= 14800);
 
-        // FOR CLASIC
-        motors.setMotor1Speed(left);
-        motors.setMotor2Speed(right);
+        // Update last turn direction based on current signals when not in sharp-turn
+        if (!inSharpTurn) {
+            if (smoothed_error > 0) {
+                lastTurnDirection = TurnLeft;  // need to steer left
+            } else if (smoothed_error < 0) {
+                lastTurnDirection = TurnRight; // need to steer right
+            }
+        }
+
+        // If line is lost, rotate in place in the last known direction until line is found
+        if (lineLost) {
+            if (lastTurnDirection == TurnLeft) {
+                motors.setMotor1Speed(80);
+                motors.setMotor2Speed(-80);
+            } else if (lastTurnDirection == TurnRight) {
+                motors.setMotor1Speed(-80);
+                motors.setMotor2Speed(80);
+            } else {
+                // Default fallback if no history: rotate left
+                motors.setMotor1Speed(80);
+                motors.setMotor2Speed(-80);
+            }
+            // Skip the rest of control for this cycle while searching
+            delay(5);
+            return;
+        }
+
+        // Detect near-90° sharp turn entry; use extreme line_value thresholds
+        if (!inSharpTurn) {
+            if (line_value <= 1500) {
+                inSharpTurn = true;
+                sharpTurnStart = millis();
+                currentTurn = TurnLeft;   // pivot left: left fwd, right rev
+                lastTurnDirection = TurnLeft;
+            } else if (line_value >= 14500) {
+                inSharpTurn = true;
+                sharpTurnStart = millis();
+                currentTurn = TurnRight;  // pivot right: left rev, right fwd
+                lastTurnDirection = TurnRight;
+            }
+        }
+
+        if (inSharpTurn) {
+            unsigned long since = millis() - sharpTurnStart;
+            if (since <= sharpReverseMs) {
+                // Phase 1 (~6 ms): one motor forward, the other reverse (reference values)
+                if (currentTurn == TurnLeft) {
+                    motors.setMotor1Speed(80);   // left forward
+                    motors.setMotor2Speed(-80);  // right reverse
+                } else if (currentTurn == TurnRight) {
+                    motors.setMotor1Speed(-80);  // left reverse
+                    motors.setMotor2Speed(80);   // right forward
+                }
+            } else {
+                // Phase 2: stop the motor that was reversing, keep the other forward
+                if (currentTurn == TurnLeft) {
+                    motors.setMotor1Speed(80);   // keep forward
+                    motors.setMotor2Speed(0);    // stop reverse side
+                } else if (currentTurn == TurnRight) {
+                    motors.setMotor1Speed(0);    // stop reverse side
+                    motors.setMotor2Speed(80);   // keep forward
+                }
+                // Exit sharp-turn after applying phase 2 for this cycle
+                inSharpTurn = false;
+                currentTurn = TurnNone;
+            }
+        } else {
+            // FOR CLASSIC (PID driven)
+            motors.setMotor1Speed(left);
+            motors.setMotor2Speed(right);
+        }
 
     } else {
         motors.setMotor1Speed(0);
