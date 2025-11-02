@@ -20,11 +20,11 @@ void handleWeb() {
             String key   = qs.substring(i, eq);
             String value = qs.substring(eq + 1, amp);
 
-            if (key == "kp")       KP = value.toFloat();
-            else if (key == "ki")  KI = value.toFloat();
-            else if (key == "kd")  KD = value.toFloat();
-            else if (key == "base") BASE_SPEED = value.toFloat();
-            else if (key == "max_output") MAX_OUTPUT = value.toFloat();
+            if (key == "kp")       KP = value.toDouble();
+            else if (key == "ki")  KI = value.toDouble();
+            else if (key == "kd")  KD = value.toDouble();
+            else if (key == "base") setBaseSpeed = value.toDouble();
+            else if (key == "max_output") MAX_OUTPUT = value.toDouble();
 
             i = amp + 1;
         }
@@ -32,11 +32,11 @@ void handleWeb() {
         client.println("HTTP/1.1 200 OK");
         client.println("Content-Type: application/json");
         client.println();
-        client.print("{\"kp\":");   client.print(KP, 4);
-        client.print(",\"ki\":");   client.print(KI, 4);
-        client.print(",\"kd\":");   client.print(KD, 4);
-        client.print(",\"base\":"); client.print(BASE_SPEED);
-        client.print(",\"max_output\":"); client.print(MAX_OUTPUT);
+        client.print("{\"kp\":");   client.print(KP, 8);
+        client.print(",\"ki\":");   client.print(KI, 8);
+        client.print(",\"kd\":");   client.print(KD, 8);
+        client.print(",\"base\":"); client.print(setBaseSpeed, 8);
+        client.print(",\"max_output\":"); client.print(MAX_OUTPUT, 8);
 
 
         client.println("}");
@@ -64,11 +64,11 @@ void handleWeb() {
     client.println("<!DOCTYPE html><html><head><title>PID Tuner</title></head><body>");
     client.println("<h2>Portenta PID Tuner (AJAX)</h2>");
 
-    client.print("KP: <input type='number' step='any' id='kp' value='"); client.print(KP, 4); client.println("'><br>");
-    client.print("KI: <input type='number' step='any' id='ki' value='"); client.print(KI, 4); client.println("'><br>");
-    client.print("KD: <input type='number' step='any' id='kd' value='"); client.print(KD, 4); client.println("'><br>");
-    client.print("Base Speed: <input type='number' step='any' id='base' value='"); client.print(BASE_SPEED); client.println("'><br>");
-    client.print("Max Output: <input type='number' step='any' id='max_output' value='"); client.print(MAX_OUTPUT); client.println("'><br>");
+    client.print("KP: <input type='number' step='any' id='kp' value='"); client.print(KP, 8); client.println("'><br>");
+    client.print("KI: <input type='number' step='any' id='ki' value='"); client.print(KI, 8); client.println("'><br>");
+    client.print("KD: <input type='number' step='any' id='kd' value='"); client.print(KD, 8); client.println("'><br>");
+    client.print("Base Speed: <input type='number' step='any' id='base' value='"); client.print(setBaseSpeed, 8); client.println("'><br>");
+    client.print("Max Output: <input type='number' step='any' id='max_output' value='"); client.print(MAX_OUTPUT, 8); client.println("'><br>");
 
 
 
